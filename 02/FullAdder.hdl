@@ -1,0 +1,56 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/2/FullAdder.hdl
+/**
+ * Computes the sum of three bits.
+ */
+CHIP FullAdder {
+    IN a, b, c;  // 1-bit inputs
+    OUT sum,     // Right bit of a + b + c
+        carry;   // Left bit of a + b + c
+
+    PARTS:
+    HalfAdder (a=a, b=b, sum=sum1, carry=carry1);
+    HalfAdder (a=c, b=sum1, sum=sum, carry=carry2);
+    Or (a=carry1, b=carry2, out=carry);
+    /*
+    Manual Approach1:
+    Xor(a=a, b=b, out=aXORb);
+    Xor(a=c, b=aXORb, out=sum);
+
+    And(a=a, b=b, out=ab);
+    And(a=b, b=c, out=bc);
+    And(a=c, b=a, out=ca);
+
+    Or(a=ab, b=bc, out=abPbc);
+    Or(a=ca, b=abPbc, out=carry);
+
+    Manual Approach2:
+
+    Not (in=a, out=NOTa);
+    Not (in=b, out=NOTb);
+    Not (in=c, out=NOTc);
+    Xor (a=b, b=c, out=bXorc);
+
+    And (a=NOTb, b=NOTc, out=NOTbNOTc);
+    And (a=b, b=c, out=ab);
+    Or (a=NOTbNOTc, b=ab, out=bXNORc);
+
+    And (a=NOTa, b=bXorc, out=sterm1);
+    And (a=a, b=bXNORc, out=sterm2);
+
+    Or (a=sterm1, b=sterm2, out=sum);
+
+    And (a=a, b=bXorc, out=out2);
+    And (a=b, b=c, out=bc);
+    Or (a=out2, b=bc, out=carry);
+    */
+}
+/*
+sum = _a_bc + _ab_c + a_b_c + abc = _a(_bc + b_c) + aXNOR(b, c) = Or(And(_a, Xor(b, c)), And(a, XNOR(b, c)))
+sum = a xor b xor c
+
+carry = _abc + a_bc + ab_c + abc = a(_bc + b_c) + bc = Or(And(a, Xor(b, c)), And(b, c))
+carry = ab + bc + ca
+*/
