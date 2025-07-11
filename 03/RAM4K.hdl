@@ -1,0 +1,30 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/3/b/RAM4K.hdl
+/**
+ * Memory of 4K 16-bit registers.
+ * If load is asserted, the value of the register selected by
+ * address is set to in; Otherwise, the value does not change.
+ * The value of the selected register is emitted by out.
+ */
+CHIP RAM4K {
+    IN in[16], load, address[12];
+    OUT out[16];
+
+    PARTS:
+    // demultiplexing the load to 8 paths, so that i can handle 8 of the RAM512, (specifying which RAM512 of the 8 RAM512 is the wanted one, using the first three bits of the address)
+    DMux8Way (in=load, sel=address[0..2], a=load0, b=load1, c=load2, d=load3, e=load4, f=load5, g=load6, h=load7); 
+
+    RAM512(in=in, load=load0, address=address[3..11], out=regs0);
+    RAM512(in=in, load=load1, address=address[3..11], out=regs1);
+    RAM512(in=in, load=load2, address=address[3..11], out=regs2);
+    RAM512(in=in, load=load3, address=address[3..11], out=regs3);
+    RAM512(in=in, load=load4, address=address[3..11], out=regs4);
+    RAM512(in=in, load=load5, address=address[3..11], out=regs5);
+    RAM512(in=in, load=load6, address=address[3..11], out=regs6);
+    RAM512(in=in, load=load7, address=address[3..11], out=regs7);
+
+    // multiplexing the output of each one of the RAM512 to get the wanted register, (specifiying which register of the 8 registers chosen from the 8 RAM512 is the wanted one, using the same three bits of the address)
+    Mux8Way16 (a=regs0, b=regs1, c=regs2, d=regs3, e=regs4, f=regs5, g=regs6, h=regs7, sel=address[0..2], out=out); 
+}
