@@ -2,14 +2,14 @@ import os
 
 class VMTranslator:
     arithTable = {
-	"not":"!", "neg":"-", "add":"+",
-	"sub":"-", "and":"&", "or":"|",
-    "eq":"JEQ", "lt":"JLT", "gt":"JGT"
-	}
+        "not":"!", "neg":"-", "add":"+",
+        "sub":"-", "and":"&", "or":"|",
+        "eq":"JEQ", "lt":"JLT", "gt":"JGT"
+    }
     segTable = {
-	"local":"LCL", "argument":"ARG", "this":"THIS",
-	"that":"THAT", "temp":"5", "pointer":"3"
-	}
+        "local":"LCL", "argument":"ARG", "this":"THIS",
+        "that":"THAT", "temp":"5", "pointer":"3"
+    }
 
     def __init__(self, path):
         super().__init__() # for possible inheritance
@@ -22,7 +22,7 @@ class VMTranslator:
             for line in file:
                 _line = line.strip()
                 if _line.startswith("//") or len(_line) == 0: continue
-                if _line.find("/") != -1: _line = _line[: _line.find("/")]
+                if _line.find("/") != -1: _line = _line[: _line.find("//")].strip()
                 self.vmCmds.append(_line)
 
     # parsing input .vm files into list of commands (removing whitespaces & comments)
@@ -37,21 +37,30 @@ class VMTranslator:
     # translate arithmetic commands
     def writeArithmetic(self, command: str):
         op = VMTranslator.arithTable[command]
-        if command in ("add", "sub", "and", "or"):
-            self.asmCmds.extend(["@SP","AM=M-1", "D=M", "A=A-1", f"M=M{op}D"])
+        if command in ("add", "and", "or"):
+            # For add/and/or: pop two values, operate
+            self.asmCmds.extend(["@SP","AM=M-1", "D=M", "A=A-1", f"M=D{op}M"])
+        elif command == "sub":
+            # For sub: x - y where y is top of stack
+            # M=M-D means M = M - D
+            self.asmCmds.extend(["@SP","AM=M-1", "D=M", "A=A-1", "M=M-D"])
         elif command in ("not", "neg"):
             self.asmCmds.extend(["@SP", "A=M-1", f"M={op}M"])
         elif command in ("eq", "gt", "lt"):
-            label1, label2 = command + "_" + str(self.symbolIdx), f"END_{self.symbolIdx}"
-            condition = [
-            f"@{label1}", f"D;{op}",
-            "@SP", "M=0",
-            f"@{label2}", "0;JMP",
-            f"({label1})", "@SP",
-            "M=-1", f"({label2})"
-            ]
+            label1 = command + "_TRUE_" + str(self.symbolIdx)
+            label2 = "END_" + str(self.symbolIdx)
             self.symbolIdx += 1
-            cmds = ["@SP", "AM=M-1", "D=-M", "A=A-1", "D=D+M", *condition]
+            # Pop two values and compare: D = x - y
+            cmds = [
+                "@SP", "AM=M-1", "D=M",    # D = y (top of stack)
+                "A=A-1", "D=M-D",           # D = x - y (x is second on stack)
+                f"@{label1}", f"D;{op}",    # If condition true, jump
+                "@SP", "A=M-1", "M=0",      # Set false (0)
+                f"@{label2}", "0;JMP",      # Jump to end
+                f"({label1})",              # True label
+                "@SP", "A=M-1", "M=-1",     # Set true (-1)
+                f"({label2})"               # End label
+            ]
             self.asmCmds.extend(cmds)
 
     def writePushPop(self, command):
@@ -64,32 +73,36 @@ class VMTranslator:
 
         # handling ("local", "argument", "this", "that") push/pop commands
         elif seg in ("local", "argument", "this", "that"):
-            cmds = [f"@{i}", "D=A", f"@{VMTranslator.segTable[seg]}", "D=D+M", "@addr", "M=D", "@SP"]
+            base = VMTranslator.segTable[seg]
             if type == "push":
-                cmds = cmds + ["A=M", "M=D", "@SP", "M=M+1"]
-            else:
-                cmds = cmds + ["M=M-1", "A=M", "D=M", "@addr", "A=M", "M=D"]
-                self.asmCmds.extend(cmds)
+                # Compute address = base + i, load value, push to stack
+                cmds = [f"@{i}", "D=A", f"@{base}", "A=D+M", "D=M",
+                       "@SP", "A=M", "M=D", "@SP", "M=M+1"]
+            else:  # pop
+                # Compute target address, pop value from stack, store it
+                cmds = [f"@{i}", "D=A", f"@{base}", "D=D+M", "@addr", "M=D",
+                       "@SP", "AM=M-1", "D=M", "@addr", "A=M", "M=D"]
+            self.asmCmds.extend(cmds)
 
         # handling ("temp", "pointer") push/pop commands
         elif seg in ("temp", "pointer"):
-            cmds = [f"@{i}", "D=A", f"@{VMTranslator.segTable[seg]}"]
+            base = VMTranslator.segTable[seg]
             if type == "push":
-                cmds = cmds + ["A=A+D", "D=M", "@SP", "A=M", "M=D", "@SP", "M=M+1"]
-            else:
-                cmds = cmds + ["D=D+A", "@addr", "M=D", "@SP", "AM=M-1", "D=M", "@addr" ,"A=M" ,"M=D"]
-                self.asmCmds.extend(cmds)
+                cmds = [f"@{i}", "D=A", f"@{base}", "A=D+A", "D=M",
+                       "@SP", "A=M", "M=D", "@SP", "M=M+1"]
+            else:  # pop
+                cmds = [f"@{i}", "D=A", f"@{base}", "D=D+A", "@addr", "M=D",
+                       "@SP", "AM=M-1", "D=M", "@addr", "A=M", "M=D"]
+            self.asmCmds.extend(cmds)
 
         # handling static push/pop commands
         elif seg == "static":
             label = self.vmFileName
-            cmds = [f"@{label}.{i}", "D=M"]
             if type == "push":
-                cmds = cmds + ["@SP", "A=M", "M=D", "@SP", "M=M+1"]
-            else:
-                cmds = ["@SP", "AM=M-1", "D=M", f"@{label}.{i}", "M=D"] ########## i might need to return to this line #########
+                cmds = [f"@{label}.{i}", "D=M", "@SP", "A=M", "M=D", "@SP", "M=M+1"]
+            else:  # pop
+                cmds = ["@SP", "AM=M-1", "D=M", f"@{label}.{i}", "M=D"]
             self.asmCmds.extend(cmds)
-
 
     def save(self):
         with open(f"{self.relativePath}{self.vmFileName}.asm", "w") as file:
@@ -97,7 +110,7 @@ class VMTranslator:
                 file.write(cmd + "\n")
 
 def main():
-    translator = VMTranslator(r"./BasicTest/BasicTest.vm")
+    translator = VMTranslator(r"./StackArithmetic/StackTest/StackTest.vm")
     translator.parse()
     translator.save()
 
